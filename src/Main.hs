@@ -5,7 +5,6 @@
 
 module Main where
 
---import Network.Wreq
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.ByteString.Char8 as S8
@@ -32,10 +31,14 @@ import URI.ByteString
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 
+import Control.Concurrent.Chan.Unagi
+import Control.Concurrent.STM
+import Control.Concurrent (forkIO, threadDelay, getNumCapabilities)
+
 import Data.Time.Clock
 
 import Data.Semigroup
-import Data.Semigroup.Reducer
+import Data.Semigroup.Reducer as Reducer
 
 import System.Environment
 
@@ -45,20 +48,39 @@ import qualified Data.Conduit.List as CL
 
 main :: IO ()
 main = do
+  (_in, out) <- newChan
+  statsVar <- newTVarIO (mempty :: Statistics)
+  -- "the number of Haskell threads that can run truly simultaneously (on separate physical processors) at any given time."
+  numCapabilities <- getNumCapabilities 
+  -- even if we have only one core, we still want to spin up a worker thread.
+  let numWorkerThreads = max 1 (numCapabilities - 1)
+  mapM_ (const . forkIO $ generateStats out statsVar) [1..numWorkerThreads]
+  forkIO $ printStats statsVar 10 -- print top 10 emoji, hashtags, domains
+  readTwitterStream _in
+
+printStats statsVar topKToPrint = 
+  forever $ do
+    stats <- atomically $ readTVar statsVar
+    printStatistics topKToPrint stats
+    threadDelay $ 5 * 10^6 -- delay thread 5 seconds.  Might sleep for longer.
+
+-- consumer thread - reads a block from the channel, calculates the statistics, then adds it to the common accumulated statistic
+generateStats out statsVar = 
+  forever $ do
+    tweets <- readChan out
+    atomically $ modifyTVar' statsVar (Reducer.cons tweets) 
+
+-- producer thread - reads everything in from twitter and puts it in the channel.
+readTwitterStream _in = do
   twInfo <- getTWInfoFromEnv
   mgr <- newManager tlsManagerSettings
   void . runResourceT $ do
     src <- stream twInfo mgr statusesSample
-    --src C.$$+- CL.mapM_ (liftIO . print)
     src C.$=+ filterTweets 
-        C.$=+ CL.groupBy currentSecond 
-        C.$$+- CL.foldM processSecond mempty 
+        C.$=+ CL.groupBy currentSecond -- todo: experiment with different block sizes? 
+        C.$$+- CL.mapM_ (liftIO . writeChan _in)
   where
-    processSecond acc curSec = do let newAcc = unit curSec <> acc
-                                  when (elapsedSeconds newAcc `mod` 5 == 0) (liftIO $ renderStatistics topItemsToDisplay newAcc)
-                                  return newAcc
     currentSecond status1 status2 = statusCreatedAt status1 == statusCreatedAt status2
-    topItemsToDisplay = 10
     filterTweets = CL.mapMaybe getTweet
       where getTweet (SStatus s) = Just s
             getTweet _ = Nothing
@@ -118,7 +140,7 @@ instance Reducer [Status] Statistics where
                        hashtag <- maybe [] enHashTags $ statusEntities tweet
                        return . hashTagText . entityBody $ hashtag
  
-renderStatistics topItemsToDisplay (Statistics total totalWithURL totalWithMediaURL totalWithEmoji elapsedSeconds urlDomains hashtags emoji) = do
+printStatistics topItemsToDisplay (Statistics total totalWithURL totalWithMediaURL totalWithEmoji elapsedSeconds urlDomains hashtags emoji) = do
   putStrLn $ "Seen a total of " ++ show total ++ " tweets so far."
   putStrLn $ "Avg tweets/sec: " ++ show (fromIntegral total / fromIntegral elapsedSeconds)
   putStrLn $ "Avg tweets/min: " ++ show ((fromIntegral total * 60) / fromIntegral elapsedSeconds)
