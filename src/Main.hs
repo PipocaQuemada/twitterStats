@@ -8,6 +8,7 @@ module Main where
 --import Network.Wreq
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as BS
 import Data.Maybe
@@ -36,6 +37,7 @@ import Data.Time.Clock
 import Data.Semigroup
 import Data.Semigroup.Reducer
 
+import System.Environment
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
@@ -50,7 +52,7 @@ main = do
     --src C.$$+- CL.mapM_ (liftIO . print)
     src C.$=+ filterTweets 
         C.$=+ CL.groupBy currentSecond 
-        C.$$+- CL.foldM processSecond identityStatistics 
+        C.$$+- CL.foldM processSecond mempty 
   where
     processSecond acc curSec = do let newAcc = unit curSec <> acc
                                   when (elapsedSeconds newAcc `mod` 5 == 0) (liftIO $ renderStatistics topItemsToDisplay newAcc)
@@ -77,7 +79,7 @@ data Statistics = Statistics { total :: Int
                              }
 
 instance Monoid Statistics where
-  mempty = Statistics 0 0 0 0 0 MultiSet.empty MultiSet.empty MultiSet.empty`
+  mempty = Statistics 0 0 0 0 0 MultiSet.empty MultiSet.empty MultiSet.empty
   mappend s1 s2 = Statistics { total = total s1 + total s2
                              , totalWithURL = totalWithURL s1 + totalWithURL s2
                              , totalWithEmoji = totalWithEmoji s1 + totalWithEmoji s2
@@ -142,3 +144,27 @@ allEmoji = "\128512\128515\128516\128513\128518\128517\128514\128092\128188\1280
 
 emojiSet :: Set.Set Char
 emojiSet = Set.fromList allEmoji
+
+-- copied from https://github.com/himura/twitter-conduit/blob/master/sample/common/Common.hs
+getOAuthTokens :: IO (OAuth, Credential)
+getOAuthTokens = do
+    consumerKey <- getEnv' "OAUTH_CONSUMER_KEY"
+    consumerSecret <- getEnv' "OAUTH_CONSUMER_SECRET"
+    accessToken <- getEnv' "OAUTH_ACCESS_TOKEN"
+    accessSecret <- getEnv' "OAUTH_ACCESS_SECRET"
+    let oauth = twitterOAuth
+            { oauthConsumerKey = consumerKey
+            , oauthConsumerSecret = consumerSecret
+            }
+        cred = Credential
+            [ ("oauth_token", accessToken)
+            , ("oauth_token_secret", accessSecret)
+            ]
+    return (oauth, cred)
+  where
+    getEnv' = (S8.pack <$>) . getEnv
+
+getTWInfoFromEnv :: IO TWInfo
+getTWInfoFromEnv = do
+    (oa, cred) <- getOAuthTokens
+    return $ (setCredential oa cred def)
