@@ -16,6 +16,9 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 executable twitterStats
+  ghc-options:         -threaded
+                       -rtsopts
+                       -O2
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
