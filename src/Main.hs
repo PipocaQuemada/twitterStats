@@ -72,6 +72,7 @@ instance Monoid Statistics where
                              }
 
 instance Semigroup Statistics where
+  (<>) = mappend
 
 instance Reducer [Status] Statistics where 
   unit tweets = Statistics { _total = count
@@ -143,22 +144,22 @@ statusesSample :: APIRequest StatusesSample StreamingAPI
 statusesSample = APIRequestGet "https://stream.twitter.com/1.1/statuses/sample.json" []
 
  
-printStatistics topItemsToDisplay (Statistics _total _totalWithURL _totalWithMediaURL _totalWithEmoji _elapsedSeconds _urlDomains _hashtags _emojis) = do
-  putStrLn $ "Seen a _total of " ++ show _total ++ " tweets so far."
-  putStrLn $ "Avg tweets/sec: " ++ show (fromIntegral _total / fromIntegral _elapsedSeconds)
-  putStrLn $ "Avg tweets/min: " ++ show ((fromIntegral _total * 60) / fromIntegral _elapsedSeconds)
-  putStrLn $ "Avg tweets/hour: " ++ show ((fromIntegral _total * 60 * 60) / fromIntegral _elapsedSeconds)
-  putStrLn $ "Percent with URLS: " ++ show (100 * (fromIntegral _totalWithURL  / fromIntegral _total))
-  putStrLn $ "Percent with media: " ++ show (100 * (fromIntegral _totalWithMediaURL / fromIntegral _total))
-  putStrLn $ "Percent with Emoji: " ++ show (100 * (fromIntegral _totalWithEmoji  / fromIntegral _total))
+printStatistics topItemsToDisplay stats = do
+  putStrLn $ "Seen a total of " ++ show (stats^.total) ++ " tweets so far." -- ^. is Contral.Lens' view operator
+  putStrLn $ "Avg tweets/sec: " ++ show (fromIntegral (stats^.total) / fromIntegral (stats^.elapsedSeconds))
+  putStrLn $ "Avg tweets/min: " ++ show ((fromIntegral (stats^.total) * 60) / fromIntegral (stats^.elapsedSeconds))
+  putStrLn $ "Avg tweets/hour: " ++ show ((fromIntegral (stats^.total) * 60 * 60) / fromIntegral (stats^.elapsedSeconds))
+  putStrLn $ "Percent with URLS: " ++ show (100 * (fromIntegral (stats^.totalWithURL)  / fromIntegral (stats^.total)))
+  putStrLn $ "Percent with media: " ++ show (100 * (fromIntegral (stats^.totalWithMediaURL) / fromIntegral (stats^.total)))
+  putStrLn $ "Percent with Emoji: " ++ show (100 * (fromIntegral (stats^.totalWithEmoji)  / fromIntegral (stats^.total)))
   putStrLn $ "Top emoji: " ++ show topEmoji 
   putStrLn $ "Top domains: " ++ show topDomains 
   putStrLn $ "Top hashtags: " ++ show topHashtags
   where
     top = take topItemsToDisplay . map fst . sortOn snd . MultiSet.toOccurList
-    topDomains = top _urlDomains 
-    topHashtags = top _hashtags 
-    topEmoji = top _emojis 
+    topDomains = top $ stats^.urlDomains
+    topHashtags = top $ stats^.hashtags 
+    topEmoji = top  $ stats^.emojis 
 
 
 isEmoji c = generalCategory c == OtherSymbol && Set.member c emojiSet
