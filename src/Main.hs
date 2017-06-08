@@ -47,11 +47,11 @@ import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
 
-data Statistics = Statistics { _total :: Int
-                             , _totalWithURL :: Int
-                             , _totalWithMediaURL :: Int
-                             , _totalWithEmoji :: Int
-                             , _elapsedSeconds :: Int
+data Statistics = Statistics { _total :: !Int
+                             , _totalWithURL :: !Int
+                             , _totalWithMediaURL :: !Int
+                             , _totalWithEmoji :: !Int
+                             , _elapsedSeconds :: !Int
                              , _urlDomains :: MultiSet BS.ByteString -- Use ByteString for URLs because there's uri-bytestring, but not uri-text
                              , _hashtags :: MultiSet T.Text
                              , _emojis :: MultiSet Char
@@ -121,7 +121,8 @@ printStats statsVar topKToPrint =
 generateStats out statsVar = 
   forever $ do
     tweets <- readChan out
-    atomically $ modifyTVar' statsVar (Reducer.cons tweets) 
+    let tweetStats = unit tweets
+    tweetStats `seq` atomically (modifyTVar' statsVar (tweetStats <>))
 
 -- producer thread - reads everything in from twitter and puts it in the channel.
 readTwitterStream _in = do
