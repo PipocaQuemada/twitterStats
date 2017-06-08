@@ -10,6 +10,8 @@ You'll need to add the environment variables `OAUTH_CONSUMER_KEY`, `OAUTH_CONSUM
 To build and run using Cabal's nix-style local builds, just:
 
     bash$ cabal new-build
-    bash$ ./dist-newstyle/build/twitterStats-0.1.0.0/build/twitterStats/twitterStats
+    bash$ ./dist-newstyle/build/twitterStats-0.1.0.0/build/twitterStats/twitterStats +RTS -N4
     
+`-N` tells GHC how many threads to create, and should generally be set to be at most the number of cores your machine has.
+
 It will print the statistics to the command line every 5 seconds.
